@@ -154,6 +154,16 @@ select { background: var(--panel-2); border: 1px solid var(--line); border-radiu
 .goal-card { position: absolute; top: 12px; right: 12px; z-index: 6; width: min(320px, calc(100% - 24px)); background: var(--panel); border: 2px solid var(--accent-fill); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 18px rgba(0,0,0,.25); font-size: 14px; }
 .goal-card p { margin: 4px 0 8px; }
 .goal-row { display: flex; gap: 6px; }
+.term { border-top: 1px solid var(--line); background: var(--panel); padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 5px; }
+.term-head { font-size: 12.5px; font-weight: 700; color: var(--muted); }
+.term .console { margin: 0; min-height: 44px; max-height: 110px; overflow: auto; }
+.term.asking { box-shadow: inset 4px 0 0 #2aa7e0; }
+.tb-next { margin-top: 6px; padding: 5px 8px; border-radius: 6px; background: rgba(245,180,0,.18); font-size: 13.5px; }
+.tb-next:empty { display: none; }
+#nextTask { margin-top: 8px; }
+.menu-speed { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; }
+.syntax-banner { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 7; max-width: 560px; background: #fbf8ec; color: #1f2326; border: 1px solid rgba(0,0,0,.2); border-left: 8px solid #d62828; border-radius: 10px; padding: 10px 14px; font-size: 14px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+.syntax-banner[hidden] { display: none !important; }
 .ask-card { border-color: #1f6fd6; }
 .ask-card code { font-family: var(--mono); background: rgba(31,111,214,.12); padding: 1px 5px; border-radius: 4px; }
 .card-preview { position: absolute; z-index: 8; width: 250px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; box-shadow: 0 8px 22px rgba(0,0,0,.3); pointer-events: none; }
@@ -371,9 +381,7 @@ details[open] > summary { margin-bottom: 8px; }
       <span class="step-hint" id="stepHint" hidden>weiter mit Klick oder Leertaste</span>
         <button class="btn" id="stepBtn" title="Einen Schritt ausführen (Alt+→)"><svg viewBox="0 0 16 16"><path d="M3 3v10l7-5z M11 3h2v10h-2z" fill="currentColor"/></svg>Schritt</button>
       <button class="btn" id="backBtn" title="Einen Schritt zurück (Alt+←)"><svg viewBox="0 0 16 16"><path d="M13 3v10L6 8z M3 3h2v10H3z" fill="currentColor"/></svg>Zurück</button>
-      <button class="btn icon" id="endBtn" title="Ohne Animation bis zum Ende" aria-label="Bis zum Ende"><svg viewBox="0 0 16 16"><path d="M2 3v10l5.5-5z M7.5 3v10L13 8z M13 3h1.5v10H13z" fill="currentColor"/></svg></button>
-      <button class="btn" id="resetBtn" title="Programm neu starten">Neu</button>
-      <label class="speed" title="Tempo"><span>Tempo</span><input type="range" id="speed" min="1" max="10" value="1" aria-label="Tempo"></label>
+      <button class="btn" id="resetBtn" title="Programm von vorn starten">Von vorn</button>
       <div class="status" id="status" aria-live="polite"></div>
     </div>
   </header>
@@ -384,7 +392,9 @@ details[open] > summary { margin-bottom: 8px; }
       <div class="task-box" id="taskBox" hidden>
         <div class="tb-head"><b id="taskKind">Auftrag</b><button class="btn primary" id="taskCheck">Prüfen</button></div>
         <div id="taskText"></div>
+        <div class="tb-next" id="taskNext"></div>
         <div class="tb-result" id="taskResult" hidden></div>
+        <button class="btn primary" id="nextTask" hidden>Nächste Aufgabe</button>
       </div>
       <div class="pane-head">Dein Code <small id="codeSub">Das Brett baut sich beim Tippen mit</small></div>
       <div class="editor" id="editor">
@@ -402,6 +412,14 @@ details[open] > summary { margin-bottom: 8px; }
         </div>
       </div>
       <div class="ed-msg" id="edMsg">Die farbigen Quadrate am Rand zeigen, zu welchem Teil jede Zeile wird.</div>
+      <div class="term" id="termPanel">
+        <div class="term-head">Konsole <small id="inputHint"></small></div>
+        <pre class="console" id="console"></pre>
+        <form class="in-row" id="inForm" autocomplete="off">
+          <input id="inField" placeholder="Hier tippst du, wenn das Programm fragt" disabled aria-label="Eingabe für das Programm">
+          <button class="btn" id="inBtn" disabled>Senden</button>
+        </form>
+      </div>
     </section>
     <section class="pane board" aria-label="3D-Brett">
       <div id="view"></div>
@@ -410,7 +428,8 @@ details[open] > summary { margin-bottom: 8px; }
       <div class="tip" id="tip" hidden></div>
       <div class="drop-hint" id="dropHint" hidden></div>
       <div class="cloud" id="cloud" hidden></div>
-      <button class="side-tab" id="sideTab" aria-expanded="false" aria-controls="sidePanel" title="Konsole, Lagerbuch, Bausteine"><span>Konsole &amp; Infos</span></button>
+      <button class="side-tab" id="sideTab" aria-expanded="false" aria-controls="sidePanel" title="Konsole, Lagerbuch, Bausteine"><span>Lagerbuch &amp; Hilfe</span></button>
+      <div class="syntax-banner" id="syntaxBanner" hidden></div>
       <div class="goal-card" id="goalCard" hidden></div>
       <div class="goal-card ask-card" id="askCard" hidden></div>
       <div class="block-preview card-preview" id="cardPreview" hidden></div>
@@ -433,6 +452,8 @@ details[open] > summary { margin-bottom: 8px; }
         <div class="more">
           <button class="btn" id="moreBtn" aria-expanded="false" aria-haspopup="true">Mehr ▾</button>
           <div class="menu" id="moreMenu" hidden>
+            <label class="speed menu-speed" title="Tempo der Animationen"><span>Tempo</span><input type="range" id="speed" min="1" max="10" value="1" aria-label="Tempo"></label>
+            <button class="btn" id="endBtn" title="Ohne Animation bis zum Ende">Bis zum Ende springen</button>
             <button class="btn" id="autoBtn" aria-pressed="false" title="Start spielt das ganze Programm ab, statt Schritt für Schritt">Automatisch abspielen</button>
             <button class="btn" id="predictBtn" aria-pressed="false" title="Klick auf die Station, zu der es deiner Meinung nach als Nächstes geht">Vorhersagen</button>
             <button class="btn" id="hintBtn" aria-pressed="false" hidden>Denkblasen</button>
@@ -467,14 +488,6 @@ details[open] > summary { margin-bottom: 8px; }
           <h2>Als Nächstes <small id="stepCount">Schritt 0</small></h2>
           <div class="next" id="nextInfo"></div>
           <div class="vars" id="vars"></div>
-        </div>
-        <div class="sec">
-          <h2>Konsole <small id="inputHint"></small></h2>
-          <pre class="console" id="console"></pre>
-          <form class="in-row" id="inForm" autocomplete="off">
-            <input id="inField" placeholder="Hier tippst du, wenn das Programm fragt" disabled aria-label="Eingabe für das Programm">
-            <button class="btn" id="inBtn" disabled>Senden</button>
-          </form>
         </div>
         <div class="sec" id="predictSec" hidden>
           <h2>Vorhersagen</h2>
@@ -3036,7 +3049,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     }
   });
   let compileTimer = null;
-  ta.addEventListener('input', () => { lessonNote = ''; refreshEditor(); clearTimeout(compileTimer); $('#edMsg').className = 'ed-msg'; $('#edMsg').textContent = 'Brett wird aktualisiert …'; compileTimer = setTimeout(() => compile(ta.value), 450); });
+  ta.addEventListener('input', () => { if (window.__syncCards) window.__syncCards(); lessonNote = ''; refreshEditor(); clearTimeout(compileTimer); $('#edMsg').className = 'ed-msg'; $('#edMsg').textContent = 'Brett wird aktualisiert …'; compileTimer = setTimeout(() => compile(ta.value), 450); });
   $('#codeBox').addEventListener('mousemove', e => {
     const r = $('#codeBox').getBoundingClientRect(); const line = Math.floor((e.clientY - r.top - PAD) / LH) + 1;
     hoverLine(line);
@@ -3225,6 +3238,11 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     function data(m) { return { part: m.userData.part, x: m.position.x, y: m.position.y, z: m.position.z, rotation: ((m.rotation.z * 180 / Math.PI) % 360 + 360) % 360, color: '#' + m.material.color.getHexString(), name: m.userData.name || '', nodeId: m.userData.nodeId, origin: { ...m.userData.origin }, labelSize: m.userData.labelSize }; }
 
     // ---- edge frames: the active piece is marked by a calm outline along its top edges (no rings, no pulsing)
+    function tintSock(sock, col) {
+      if (!sock) return;
+      sock.material.color.set(sock.userData.baseColor || CCOL.socket);
+      if (col) sock.material.color.lerp(new THREE.Color(col), .6);
+    }
     function frameFor(m, color, pad = 3, thick = 2.6) {
       if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
       const bb = m.geometry.boundingBox, sx = m.scale.x, sy = m.scale.y;
@@ -3446,7 +3464,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
             const base = CCOL.socket;   // printed sockets are grey; the type shows on the stone (and on screen as a ring)
             const m = addPart({ part: 'variable', x: s.x - 15 + 60 * i, y: s.y, color: base, name: i ? '' : s.label, nodeId: i ? null : s.sid, info: s });
             m.userData.dataSock = s.sid + '|' + i; m.userData.baseColor = base;
-            sticker(m, s.dataNames[i], 30, 9, 0, -19, true);
+            // the first socket stands on the road: its name tape goes beside it on the board, like a shelf label
+            if (i === 0) sticker(m, s.dataNames[i], 30, 9, -46, 0, true); else sticker(m, s.dataNames[i], 30, 9, 0, -19, true);
           });
           if (s.container) {
             const x0 = s.x - 15 + 60 * s.dataNames.length;
@@ -3531,9 +3550,10 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       }
       lastItems = new Map(items.map(t => [t.key, t.sig])); lastConts = new Set(items.map(t => t.cont));
     }
-    function flight(target, from, delay = 0, onDone, cart = false) {
+    function flight(target, from, delay = 0, onDone, cart = false, slide = false) {
       if (blind) { if (onDone) onDone(); return; }
       const fly = mesh(target.userData.part === 'character' ? 'character' : target.userData.part === 'member' ? 'member' : 'value', '#' + target.material.color.getHexString());
+      target.children.forEach(c => { if (c.userData.sticker) fly.add(c.clone()); });
       fly.rotation.copy(target.rotation); fly.position.copy(from); scene.add(fly); fly.visible = delay === 0;
       target.visible = false; if (target.userData.sprite) target.userData.sprite.visible = false; target.userData.active = true;
       let trolley = null;
@@ -3545,7 +3565,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
         const handle = new THREE.Mesh(new THREE.BoxGeometry(1.4, 12, 10), new THREE.MeshStandardMaterial({ color: 0xf57c00 })); handle.position.set(-9, 0, 7); trolley.add(handle);
         trolley.visible = delay === 0; scene.add(trolley);
       }
-      flights.push({ fly, from: from.clone(), to: target.position.clone(), t0: performance.now() + delay, target, onDone, dur: FLY_MS * (api.animScale || 1), trolley });
+      flights.push({ fly, from: from.clone(), to: target.position.clone(), t0: performance.now() + delay, target, onDone, dur: FLY_MS * (api.animScale || 1) * (slide ? 1.4 : 1), trolley, slide });
     }
     const flights = [];
     // Hand cart (screen only): a copy of each new or changed value travels from the worker, or from the
@@ -3589,7 +3609,10 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
           // a value lands on its socket: it falls from above onto the shelf (and the socket takes its colour)
           const near = Math.hypot(from.x - p.mesh.position.x, from.y - p.mesh.position.y) < 45;
           let start = near ? p.mesh.position.clone().setZ(60) : from.clone().setZ(12);
-          if (p.sock && fork.on && fork.g.visible && benchResult) {
+          const fromList = api._loopSrc && api._loopSrc.get(p.name);
+          let slide = false;
+          if (fromList) { start = fromList.clone().setZ(10); slide = true; }      // from its pocket on the pallet, along the belt
+          else if (p.sock && fork.on && fork.g.visible && benchResult) {
             // the finished parcel is handed from the workbench onto the forks, then lowered into the compartment
             const K = api.animScale || 1, tip = forkTip().setZ(22), carry = mesh(p.mesh.userData.part === 'complex' ? 'complex' : 'value', p.col), b0 = benchResult.position.clone().setZ(12);
             carry.position.copy(b0); scene.add(carry); fork.liftUntil = performance.now() + deliverDelay + 1600 * K;
@@ -3602,7 +3625,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
             tempFx.push({ objs: [carry], t0: performance.now() + deliverDelay, dur: 600 * K, update: k => { carry.position.copy(forkTip()).setZ(14 + 8 * Math.min(1, k * 2)); } });
             start = tip; deliverDelay += 600 * K;
           }
-          flight(p.mesh, start, deliverDelay);
+          if (p.sock) { const old = lastVals.get(p.key); tintSock(p.sock, old ? old.col : null); }   // the new colour comes with the new parcel
+          flight(p.mesh, start, deliverDelay, p.sock ? () => tintSock(p.sock, p.col) : null, false, slide);
         });
       }
       // only the values that changed in this step speak; the rest step back
@@ -3748,6 +3772,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
           const label = withTray ? { main: '→ str', sub: '' } : { main: valueText(I, e.v, 18), sub: '' };
           if (dynSock) sticker(dynSock, e.name, 30, 9, 0, -19, true);   // loop variables, parameters: the name on tape, like every socket
           const tok = tokenFor(e.v, sx, y, label, 8, 7);
+          tintSock(dataSockFor || dynSock, tcol);
           placements.push({ key: `${e.fr.lane}|${e.fr.k}|${e.name}`, mesh: tok, sig: (isHeap(e.v) ? e.v.ref + ':' : '') + I.repr(e.v), sock: dataSockFor || dynSock, ring, col: tcol, v: e.v, lane: e.fr.lane, k: e.fr.k, name: e.name });
           const fromLayout = di === 0 && st.container;
           const kindMatch = fromLayout && ({ list: 'list', tuple: 'tuple', dictionary: 'dict', setBin: 'set', instance: 'object' })[st.container] === (e.v && e.v.kind);
@@ -3846,7 +3871,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       }
       api._benchPlay = benchPlay; api._placements = placements;
       // a gold ring marks the item each running for-loop is visiting
-      const byKey = new Map(items.filter(t => t.mesh).map(t => [t.key, t.mesh]));
+      const byKey = new Map(items.filter(t => t.mesh).map(t => [t.key, t.mesh])); api._loopSrc = new Map();
       if (I.iters) for (const [sid, v] of I.iters) {
         if (v.i < 0 || !v.obj) continue;
         let m = null;
@@ -3854,14 +3879,26 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
         else if (v.obj.kind === 'list' || v.obj.kind === 'tuple') m = byKey.get(v.obj.ref + '|' + v.i);
         else if (v.obj.kind === 'dict') m = byKey.get(v.obj.ref + '|k' + v.i);
         if (!m) continue;
-        // gold pointer hovering over the item the loop is visiting (screen only)
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(4.5, 11, 18), new THREE.MeshStandardMaterial({ color: 0xd8a13b, roughness: .5 }));
-        cone.rotation.x = -Math.PI / 2; cone.position.set(m.position.x, m.position.y, m.position.z + 30);
-        cone.userData = { dyn: true, part: 'pointer', bobZ: m.position.z + 30 };
+        if (api.loopVarOf) { const nm = api.loopVarOf(sid); if (nm) (api._loopSrc = api._loopSrc || new Map()).set(nm, m.position.clone()); }
+        // a gripper arm hovering over the item the loop is visiting (screen only)
+        const cone = new THREE.Group(), steel = new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: .6, roughness: .35 }), orange = new THREE.MeshStandardMaterial({ color: 0xf57c00 });
+        const rod = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 30, 8), steel); rod.rotation.x = Math.PI / 2; rod.position.z = 22; cone.add(rod);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 4), orange); head.position.z = 7; cone.add(head);
+        [-1, 1].forEach(sg => { const f = new THREE.Mesh(new THREE.BoxGeometry(1.6, 4, 9), steel); f.position.set(sg * 4.2, 0, 1); f.rotation.y = sg * .18; cone.add(f); });
+        cone.position.set(m.position.x, m.position.y, m.position.z + 14);
+        cone.userData = { dyn: true, part: 'pointer', bobZ: m.position.z + 14 };
         const glow = new THREE.Mesh(new THREE.PlaneGeometry(15, 17), new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: .55, depthWrite: false }));
         glow.position.set(m.position.x, m.position.y, m.position.z - 1.5); glow.userData = { dyn: true, part: 'pointer' };
         scene.add(cone); scene.add(glow); dyn.push(cone, glow);
       }
+      for (const m of dyn) {
+        if (!['value', 'complex', 'character', 'member'].includes(m.userData.part) || m.userData.stuck) continue;
+        const txt = m.userData.name; if (txt === undefined || txt === '') continue;
+        const w = m.userData.part === 'character' ? 13 : m.userData.part === 'complex' ? 30 : 24, h = m.userData.part === 'character' ? 10 : 11;
+        sticker(m, String(txt), w, h, 0, m.userData.part === 'member' ? 2 : 0, false); m.userData.stuck = true;
+        if (m.userData.sprite) { disposeSprite(m.userData.sprite); m.userData.sprite = null; }
+      }
+      [...parts, ...dyn].forEach(m => { if (m.userData.part !== 'operator' || m.userData.taped) return; sticker(m, '=', 5, 9, 30, 0, false); sticker(m, 'Ergebnis', 26, 7, 45, -19, true); m.userData.taped = true; });
       animateItems(items);
       animateCart(placements, benchResult);
       if (Number.isFinite(minX)) ensurePanels(minX - 20, maxX, minY - 10, maxY);
@@ -4083,6 +4120,12 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       for (let i = flights.length - 1; i >= 0; i--) {
         const f = flights[i]; if (t < f.t0) continue; f.fly.visible = true;
         const k = Math.min(1, (t - f.t0) / f.dur), ease = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        if (f.slide) {
+          // along the conveyor belt: flat, steady, then set down into the compartment
+          f.fly.position.set(f.from.x + (f.to.x - f.from.x) * ease, f.from.y + (f.to.y - f.from.y) * ease, k < .9 ? 10 : 10 + (f.to.z - 10) * (k - .9) / .1);
+          if (k >= 1) { if (f.onDone) f.onDone(); scene.remove(f.fly); f.fly.material.dispose(); f.target.visible = !blind; flights.splice(i, 1); }
+          continue;
+        }
         if (f.trolley) {
           // the copy rides on the cart along the floor: first along the row, then across; at the end it is set down
           f.trolley.visible = true;
@@ -4465,7 +4508,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
       const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t }));
       if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-      p.position.set(dx, dy, tape ? 0.4 : m.geometry.boundingBox.max.z + 0.35); p.userData.decal = true; p.userData.sticker = true; m.add(p);
+      // tapes lie on top of the road
+      p.position.set(dx, dy, tape ? Math.max(2.6, level('route') + 3 - m.position.z) : m.geometry.boundingBox.max.z + 0.35); p.userData.decal = true; p.userData.sticker = true; m.add(p);
     }
     // ---- code ↔ board link: a glowing frame around every piece of the line being read or written
     function makeSpot(color, op) {
@@ -4714,12 +4758,14 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   // =====================================================================================
   function compile(code, opts = {}) {
     let ast;
+    $('#syntaxBanner').hidden = true;
     try { ast = parsePython(code); }
     catch (e) {
       if (e instanceof PySyntaxError || e.pyType === 'SyntaxError') {
         setBand('#errBand', e.line);
         $('#edMsg').className = 'ed-msg err';
         $('#edMsg').innerHTML = `<b>Zeile ${e.line}:</b> ${esc(e.message)}. Das Brett zeigt deine letzte funktionierende Version.`;
+        $('#syntaxBanner').innerHTML = `<b>Zeile ${e.line} ist kein gültiges Python.</b> ${esc(e.message)}. Das Brett kann sie nicht bauen: korrigiere oder entferne die Zeile.`; $('#syntaxBanner').hidden = false;
         status();
         return false;
       }
@@ -4846,7 +4892,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   // ---- warehouse sounds: synthesised in the browser, off by default (button "Ton")
   const sfx = (() => {
     let ctx = null, on = false;
-    const ac = () => ctx || (ctx = new (window.AudioContext || window.webkitAudioContext)());
+    const ac = () => { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); return ctx; };
+    document.addEventListener('pointerdown', () => { if (on) try { ac(); } catch (e) {} }, { once: true });   // browsers allow sound after the first click
     function tone(f, d, type = 'sine', v = .05, at = 0, f2 = null) {
       const c = ac(), o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
       o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
@@ -5136,6 +5183,26 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     fend: 'Am Ende einer Funktion geht es zurück zum Aufruf.',
     call: 'Steht in einer Zeile ein Funktionsaufruf, fährt der Stapler zuerst in die Funktion.',
   };
+  function finishRun() {
+    const r = st.runner, I = r.I, x = EXAMPLES.find(e => e.id === exSel.value) || {}, out = [];
+    let ok = null;
+    if (x.kind === 'build') ok = showChecks(checkTask(x, ta.value));
+    else {
+      if (r.state === 'error') out.push('Die Schicht wurde wegen eines Fehlers abgebrochen. Die Meldung steht am Brett.');
+      const g = learn.goal;
+      if (g) {
+        const lines = I.out.trim().split('\n'), v = g.out ? undefined : I.globals.vars.get(g.name);
+        const actual = g.out ? (r.state === 'done' ? lines[lines.length - 1] : '–') : v === undefined ? '–' : I.repr(v);
+        if (g.expect !== undefined) { ok = r.state === 'done' && norm(actual) === norm(g.expect); out.unshift(ok ? '<b class="good">Auftrag erfüllt.</b>' : `<b class="bad">Noch nicht:</b> ${g.out ? 'auf dem letzten Etikett steht' : 'im Fach ' + esc(g.name) + ' liegt'} ${esc(actual)}, gesucht ist ${esc(g.expect)}.`); }
+        else out.push(`Ergebnis: ${g.out ? 'auf dem letzten Etikett steht' : 'im Fach <b>' + esc(g.name) + '</b> liegt'} <b>${esc(actual)}</b>.`);
+      }
+      if (r.state === 'done' && !out.length) out.push('Schicht beendet.');
+      $('#taskResult').innerHTML = out.map(l => `<div>${l}</div>`).join(''); $('#taskResult').hidden = false;
+    }
+    if (quiz.asked) $('#taskResult').insertAdjacentHTML('beforeend', `<div>Fragen unterwegs: ${quiz.right} von ${quiz.asked} richtig.</div>`);
+    $('#nextTask').hidden = !(ok === true || (ok === null && r.state === 'done'));
+    renderAll();
+  }
   function showReport() {
     const r = st.runner, el = $('#report'), I = r.I;
     const preds = learn.log, ok = preds.filter(p => p.ok).length;
@@ -5178,7 +5245,11 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   window.__lagerStations = () => st.plan.stations.map(x => ({ sid: x.sid, kind: x.kind, line: x.line }));
   window.__lagerPredict = sid => { const m = board && board.parts.find(x => x.userData.nodeId === sid); return m ? predictClick(m) : false; };
   window.__lagerState = () => ({ sid: st.runner.event && st.runner.event.sid, stations: st.plan.stations.map(x => ({ sid: x.sid, kind: x.kind, label: x.label })) });
-  $('#taskCheck').onclick = () => runChecks();
+  $('#taskCheck').onclick = () => { const ok = runChecks(); $('#nextTask').hidden = !ok; };
+  $('#nextTask').onclick = () => {
+    const i = EXAMPLES.findIndex(e => e.id === exSel.value), nx = EXAMPLES.slice(i + 1).find(e => e.id !== 'blank');
+    if (nx) loadExample(nx.id);
+  };
   window.addEventListener('keydown', e => {
     if (e.key !== ' ' && e.key !== 'Enter') return;
     const a = document.activeElement; if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.tagName === 'SELECT' || a.tagName === 'BUTTON' || a.isContentEditable)) return;
@@ -5246,6 +5317,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     // run button
     $('#runBtn').querySelector('span').textContent = st.running ? 'Pause' : (r.state === 'done' || r.state === 'error') ? 'Nochmal' : r.steps ? (st.autoplay ? 'Weiter' : 'Nächster Schritt') : 'Start';
     const readyForNext = !st.autoplay && !st.running && r.steps > 0 && r.state === 'ready';
+    nextHint();
     $('#runBtn').classList.toggle('ready', readyForNext); $('#stepHint').hidden = !readyForNext;
     $('#runBtn').title = st.autoplay ? 'Programm automatisch abspielen' : 'Genau einen Schritt weiter. Erst wenn du ihn verstanden hast, klick wieder.';
     $('#runBtn').querySelector('svg').innerHTML = st.running ? '<path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor"/>' : '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>';
@@ -5291,10 +5363,10 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (mode.guided && r.steps > 0) $('#guideSec').hidden = true;
       // end of the shift: uncover a blind flight, then show the report
       const isBuild = (EXAMPLES.find(e => e.id === exSel.value) || {}).kind === 'build';
-      if ((r.state === 'done' || r.state === 'error') && learn.reported !== r && (learn.log.length || learn.goal || guidedRun() || isBuild)) {
+      if ((r.state === 'done' || r.state === 'error') && learn.reported !== r) {
         learn.reported = r;
+        setTimeout(finishRun, (board ? board.busyMs() : 0) + 900);
         if (board.isBlind()) { board.setBlind(false); $('#blindBtn').setAttribute('aria-pressed', 'false'); $('#app').classList.remove('blind'); toast('Aufgedeckt: so sieht das Brett wirklich aus.', 'good'); board.renderMemory(r.I, st.plan, { animate: false }); }
-        setTimeout(showReport, 900);
       }
     }
     showGoal();
@@ -5303,7 +5375,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (opts.animate && grew && st.prevSid && r.state !== 'input') board.printLabel(st.prevSid, r.I.out.slice(st.lastOutLen || 0).trim());
       if (opts.animate) playStepSounds(r, st.prevSid, grew);
       board.setTerminal(r.state === 'input' && r.waiting ? r.waiting.sid : null);
-      if (r.state === 'input' && $('#app').classList.contains('side-closed')) { setSide(true, false); showTab('now'); setTimeout(() => $('#inField').focus(), 60); }
+      $('#termPanel').classList.toggle('asking', r.state === 'input');
+      if (r.state === 'input') setTimeout(() => $('#inField').focus(), 60);
       if (opts.animate) { warehouseMoments(r, st.prevSid); recordBook(r, st.prevSid); }
       if (st.focus !== false) {
         const running = r.steps > 0 && r.state !== 'done' && r.state !== 'error';
@@ -5405,8 +5478,13 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); step(); return; }
       if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); back(); return; }
       if (typing) return;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && board.selected) { e.preventDefault(); board.deleteSelected(); }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && board.selected && board.editable) { e.preventDefault(); board.deleteSelected(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (board.editable) { e.shiftKey ? board.redo() : board.undo(); return; }
+        // the board follows the code: undo is code undo
+        ta.focus(); document.execCommand(e.shiftKey ? 'redo' : 'undo'); ta.blur();
+      }
     });
   }
 
@@ -5673,7 +5751,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     box.addEventListener('keydown', ev => { if (ev.key === 'Enter') finish(true); if (ev.key === 'Escape') finish(false); ev.stopPropagation(); });
     box.addEventListener('blur', () => finish(true));
   }
-  function setCode(text) { ta.focus(); ta.setSelectionRange(0, ta.value.length); insertText(text); refreshEditor(); }
+  function setCode(text) { ta.focus(); ta.setSelectionRange(0, ta.value.length); insertText(text); refreshEditor(); if (window.__syncCards) window.__syncCards(); }
   function moveLines(info, tgt) {
     const cut = cutLines(info); if (!cut) { toast('Kurz warten, bis das Brett zum Code passt.', ''); return; }
     if (tgt.mode !== 'end' && tgt.line >= cut.s0 && tgt.line <= cut.e0) return;            // dropped onto itself
@@ -5684,7 +5762,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   window.addEventListener('keydown', e => {
     if (!board || !(e.key === 'Delete' || e.key === 'Backspace')) return;
     const a = document.activeElement; if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)) return;
-    const info = board.hoverInfo; if (!info) return;
+    const info = board.hoverInfo || (board.selected && board.selected.userData.info); if (!info || !info.line) return;
     const cut = cutLines(info); if (!cut) return;
     e.preventDefault(); setCode(cut.rest); ta.blur(); clearTimeout(compileTimer); compile(ta.value, { fit: false });
     toast('Entfernt: ' + cut.code.split('\n')[0].trim(), '');
@@ -5844,6 +5922,35 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     if (/^(def|return|class|import|from)\b/.test(t)) return 'Werkstatt';
     return 'Sonstiges';
   }
+  function nextHint() {
+    const r = st.runner; if (!r) return;
+    const readyForNext = !st.autoplay && !st.running && r.steps > 0 && r.state === 'ready';
+    {
+      const x = EXAMPLES.find(e => e.id === exSel.value) || {}, left = puzzle.on ? puzzle.cards.filter(c => !c.used).length : 0;
+      let t = '';
+      if (!$('#syntaxBanner').hidden) t = 'Eine Zeile ist kein gültiges Python. Korrigiere oder entferne sie.';
+      else if (puzzle.on && left) t = `Zieh die Teile aufs Brett oder in den Code (${left} übrig). Fahr über ein Teil, um zu sehen, was es tut.`;
+      else if (r.state === 'input') t = 'Das Programm wartet auf eine Eingabe: tipp sie unten in die Konsole.';
+      else if (st.running) t = '';
+      else if (r.steps === 0) t = x.kind === 'build' ? 'Klick „Prüfen“, oder geh mit „Start“ Schritt für Schritt durch dein Programm.' : 'Klick „Start“ und geh Schritt für Schritt durch das Programm.';
+      else if (readyForNext) t = 'Schau, was passiert. Verstanden? Dann „Nächster Schritt“ (oder Leertaste).';
+      $('#taskNext').textContent = t;
+    }
+  }
+  function syncCards() {
+    if (!puzzle.on) return;
+    const pool = ta.value.split('\n').map(l => l.trim()).filter(l => l && !/^pass\b/.test(l));
+    const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let changed = false;
+    puzzle.cards.forEach(c => {
+      const re = c.gap ? new RegExp('^' + reEsc(c.text).replace('__', '.+') + '$') : null;
+      const i = pool.findIndex(l => re ? re.test(l) : l === c.text), used = i >= 0;
+      if (used) pool.splice(i, 1);
+      if (c.used !== used) { c.used = used; changed = true; }
+    });
+    if (changed) renderTray();
+  }
+  window.__syncCards = syncCards;
   function renderTray() {
     cardPreview(null);
     const el = $('#puzzleCards'); el.innerHTML = '';
@@ -5861,6 +5968,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
 
       if (!b._placed) el.appendChild(b);
     });
+    nextHint();
     $('#puzzleLeft').textContent = puzzle.cards.filter(c => !c.used).length ? `${puzzle.cards.filter(c => !c.used).length} Teile übrig` : 'alle Teile liegen';
   }
   // where on the board did a block land? → a target line in the code
@@ -6133,11 +6241,11 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   const SLIDES = { 'Termin 1': 'Folien 16–23', 'Termin 2': 'Folien 24–43', 'Termin 3': 'Folien 44–57', 'Termin 4': 'Folien 58–70', 'Termin 5': 'Folien 71–79', 'Termin 6': 'Folien 80–98, 100–104', 'Termin 7': 'Folien 99–107, 118–127' };
   const isWriteTask = x => x.kind === 'build' && /^Termin [67]/.test(x.group || '');
   function showTask(x) {
-    const box = $('#taskBox'); $('#taskResult').hidden = true;
+    const box = $('#taskBox'); $('#taskResult').hidden = true; $('#nextTask').hidden = true;
     if (!x || x.id === 'blank') { box.hidden = true; return; }
     const sl = SLIDES[(x.group || '').split(':')[0]];
     $('#taskKind').textContent = x.kind === 'build' ? 'Auftrag' : 'Aufgabe';
-    const q = x.goal && x.goal.q ? `<span class="task-q">${esc(x.goal.q)}</span>` : isWriteTask(x) ? '<span class="task-q">Schreib den Code selbst. Wenn du festhängst: „Als Puzzle bauen“.</span>' : '';
+    const q = x.goal && x.goal.q ? `<span class="task-q">${esc(x.goal.q)}</span>` : isWriteTask(x) ? '<span class="task-q">Schreib den Code selbst. Hilfe: leere Bausteine unter „Konsole &amp; Infos“ → Bausteine (Vorlage hinlegen, Werte ändern). Ganz festgefahren: „Als Puzzle bauen“.</span>' : '';
     $('#taskText').innerHTML = (x.kind === 'build' ? x.brief : esc(x.note || '')) + q + (sl ? `<span class="slides">Theorie: ${sl}</span>` : '');
     $('#taskCheck').hidden = x.kind !== 'build'; box.hidden = false;
   }
@@ -6233,6 +6341,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   requestAnimationFrame(ropeTick);
   toggle('#ropeBtn', () => {});
   toggle('#soundBtn', on => { sfx.set(on); if (on) sfx.bell(); });
+  $('#soundBtn').setAttribute('aria-pressed', 'true'); sfx.set(true);
+  $('#predictBtn').hidden = true; st.predict = false;
   // ---- resizable sections: drag the lines between code, board and side panel (remembered in this browser)
   const mainEl = document.querySelector('.main');
   let widths = { code: 0, side: 0 };
@@ -6283,7 +6393,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     measureChar(); buildPalette();
     try {
       board = createBoard(); $('#loading').remove(); setupTools();
-      board.blockTarget = boardTarget; board.exprFor = exprForSid; board.codeStyle = true; board.onMoveLine = moveLines; board.onEditLine = editLine; board.isRunning = () => st.running; board.animScale = animScale();
+      board.blockTarget = boardTarget; board.exprFor = exprForSid; board.codeStyle = true; board.onMoveLine = moveLines; board.loopVarOf = sid => { const s_ = st.plan && st.plan.stations.find(x => x.sid === sid), n = s_ && s_.line && findFor(s_.line); return n && n.target && n.target.type === 'Name' ? n.target.id : null; }; board.onEditLine = editLine; board.isRunning = () => st.running; board.animScale = animScale();
       board.onBlockDrop = (id, info, x) => dropCode(id, boardTarget(info, x));
       board.onHoverPart = info => {
         hotGuide(info ? (info.headerLine || (st.plan && st.plan.blocks.some(b => b.start === info.line) ? info.line : null)) : null);
