@@ -156,7 +156,11 @@ select { background: var(--panel-2); border: 1px solid var(--line); border-radiu
 .goal-row { display: flex; gap: 6px; }
 .term { border-top: 1px solid var(--line); background: var(--panel); padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 5px; }
 .term-head { font-size: 12.5px; font-weight: 700; color: var(--muted); }
-.term .console { margin: 0; min-height: 44px; max-height: 110px; overflow: auto; }
+.term .console { margin: 0; min-height: 28px; max-height: 84px; overflow: auto; }
+.in-row[hidden], .ed-msg[hidden] { display: none !important; }
+.tour-offer { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 10px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 8px 14px; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.tour-offer[hidden] { display: none !important; }
+.task-box code { font-family: var(--mono); font-size: 13.5px; }
 .term.asking { box-shadow: inset 4px 0 0 #2aa7e0; }
 .tb-next { margin-top: 6px; font-size: 13px; color: var(--muted); }
 .tb-next:empty { display: none; }
@@ -417,7 +421,7 @@ details[open] > summary { margin-bottom: 8px; }
       <div class="term" id="termPanel">
         <div class="term-head">Konsole <small id="inputHint"></small></div>
         <pre class="console" id="console"></pre>
-        <form class="in-row" id="inForm" autocomplete="off">
+        <form class="in-row" id="inForm" autocomplete="off" hidden>
           <input id="inField" placeholder="Hier tippst du, wenn das Programm fragt" disabled aria-label="Eingabe für das Programm">
           <button class="btn" id="inBtn" disabled>Senden</button>
         </form>
@@ -432,6 +436,7 @@ details[open] > summary { margin-bottom: 8px; }
       <div class="cloud" id="cloud" hidden></div>
       <button class="side-tab" id="sideTab" aria-expanded="false" aria-controls="sidePanel" title="Konsole, Lagerbuch, Bausteine"><span>Lagerbuch &amp; Hilfe</span></button>
       <div class="syntax-banner" id="syntaxBanner" hidden></div>
+      <div class="tour-offer" id="tourOffer" hidden>Neu hier? <button class="btn primary" data-t="go">Einführung</button><button class="btn" data-t="no">Nein danke</button></div>
       <div class="goal-card" id="goalCard" hidden></div>
       <div class="goal-card ask-card" id="askCard" hidden></div>
       <div class="block-preview card-preview" id="cardPreview" hidden></div>
@@ -2525,7 +2530,7 @@ const KIND_COLORS = {
   break: PHYS.rot, continue: PHYS.rot, return: PHYS.rot, raise: PHYS.rot,                               // jump away
   def: PHYS.grau, class: PHYS.grau, fentry: PHYS.grau, fend: PHYS.grau, import: PHYS.grau,              // structure
   try: PHYS.grau, except: PHYS.grau, finally: PHYS.grau, tryend: PHYS.grau, end: PHYS.grau, start: PHYS.grau,
-  data: PHYS.grau                                                                                       // a socket is always grey
+  data: PHYS.hellgruen                                                                                  // an assignment is a statement: a green station
 };
 const KIND_NAMES = {
   stmt: 'Anweisung', data: 'Neuer Name (Variablen-Sockel)', input: 'Eingabe', print: 'Ausgabe (print)', loop: 'Schleifen-Test', loopret: 'Ende der Schleife: hoch zum Test oder weiter', loopelse: 'else der Schleife', if: 'Entscheidung', else: 'else-Zweig',
@@ -2547,6 +2552,13 @@ function benchOp(e) {
 const JUMP_ROADS = false;   // jumps use a pair of flags: two signs instead of 10-15 extra route tiles
 const EXITS = new Set(['break', 'continue', 'return', 'raise']);
 
+function hasOp(n) {
+  if (!n || typeof n !== 'object') return false;
+  if (Array.isArray(n)) return n.some(hasOp);
+  if (['BinOp', 'Compare', 'BoolOp'].includes(n.type) || (n.type === 'UnaryOp' && n.op === 'not')) return true;
+  for (const k in n) if (k !== 'parent' && k !== 'line' && n[k] && typeof n[k] === 'object' && hasOp(n[k])) return true;
+  return false;
+}
 function buildPlan(ast, src) {
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   let n = 0, loopN = 0, mergeN = 0;
@@ -2687,7 +2699,7 @@ function buildPlan(ast, src) {
             if (fresh.length) {
               const single = s.targets.length === 1 && s.targets[0].type === 'Name';
               const t = single ? inferType(s.value) : null;
-              s.sid = add(lane, depth, 'data', lineText(s.line), s.line, { dataNames: fresh, inferred: t, container: t ? CONTAINER[t] || null : null, viaInput: hasCall(s, 'input') });
+              s.sid = add(lane, depth, 'data', lineText(s.line), s.line, { dataNames: fresh, inferred: t, container: t ? CONTAINER[t] || null : null, viaInput: hasCall(s, 'input'), calc: hasOp(s.value) });
               break;
             }
           }
@@ -2772,7 +2784,9 @@ function buildPlan(ast, src) {
       for (let y = r.y + 30; y < h.y; y += 30) route(h.x - 15, y, N);
     });
     // a jump gets a real road down the right-hand side when that corridor is free of pieces and other roads
-    const footprint = it => it.attach ? [it.x - 30, it.x + 150] : it.kind === 'data' && it.container ? [it.x - 30, it.x - 15 + 60 * it.dataNames.length + 135] : it.kind === 'data' ? [it.x - 30, it.x - 15 + 60 * it.dataNames.length] : [it.x - 30, it.x + 30];
+    // an assignment is a station on the road; its compartments stand beside it (after a workbench gap if it calculates)
+    const sockEnd = it => it.x + (it.calc ? 195 : 60) + 60 * it.dataNames.length - 30;
+    const footprint = it => it.attach ? [it.x - 30, it.x + 150] : it.kind === 'data' && it.container ? [it.x - 30, sockEnd(it) + 165] : it.kind === 'data' ? [it.x - 30, sockEnd(it)] : [it.x - 30, it.x + 30];
     const hits = (x, y) => lane.items.some(it => { const [a, b] = footprint(it); return Math.abs(it.y - y) < 30 && x + 15 > a && x - 15 < b; });
     const jumpRoad = (from, to) => {
       const cx = from.x + 45, tiles = [[cx, from.y, S]];
@@ -3296,7 +3310,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       const A = unpark ? unpark.clone() : fork.g.position.clone();
       const ai = prev && prev.userData.info, bi = m.userData.info;
       fork.sid = sid;
-      if (!prev || !ai || !bi || reduced || !fork.g.visible) { fork.g.position.copy(B); fork.path = []; if (bi) { const pk = bi.kind === 'cond' ? P(B.x + 76, B.y) : P(B.x - (bi.kind === 'data' ? 0 : 15), B.y - 42); fork.g.position.copy(pk); fork.heading = bi.kind === 'cond' ? Math.PI : Math.PI / 2; } return; }
+      if (!prev || !ai || !bi || reduced || !fork.g.visible) { fork.g.position.copy(B); fork.path = []; if (bi) { const pk = bi.kind === 'cond' ? P(B.x + 76, B.y) : P(B.x - 15, B.y - 42); fork.g.position.copy(pk); fork.heading = bi.kind === 'cond' ? Math.PI : Math.PI / 2; } return; }
       const sameLane = ai.lane === bi.lane, seg = (p, extra) => Object.assign({ to: p }, extra);
       // ---- 9) no teleporting: where there is no road (flags, other lanes) the forklift drives a marked route around
       const flagRoute = (from, to) => { const xl = Math.min(from.x, to.x) - 76; return [seg(P(xl, from.y), { flag: true }), seg(P(xl, to.y), { flag: true }), seg(to, { flag: true })]; };
@@ -3322,7 +3336,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
         path = flagRoute(A, B);                                                             // flag pair or another lane: a marked route
       }
       // park beside the piece so it stays visible: in front of a station (forks pointing at it), at the end of a bench
-      const park = bi.kind === 'cond' ? P(B.x + 76, B.y) : P(B.x - (bi.kind === 'data' ? 0 : 15), B.y - 42);
+      const park = bi.kind === 'cond' ? P(B.x + 76, B.y) : P(B.x - 15, B.y - 42);
       path.push(seg(park, { park: true, face: bi.kind === 'cond' ? Math.PI : Math.PI / 2 }));
       if (unpark && fork.g.position.distanceTo(unpark) > 2) path.unshift(seg(unpark));
       fork.path = path;
@@ -3462,15 +3476,17 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       clearParts(); clearDyn(); pawnSnap = true;
       for (const s of plan.stations) {
         if (s.kind === 'data') {
+          // the line itself is a green station on the road; the compartments stand beside it
+          const stn = addPart({ part: 'station', x: s.x, y: s.y, color: s.color, name: s.label, nodeId: s.sid, info: s });
+          sticker(stn, s.viaInput ? 'input()' : s.dataNames.join(', ') + ' =', 40, 14, 3, 0);
           s.dataNames.forEach((n, i) => {
-            const base = CCOL.socket;   // printed sockets are grey; the type shows on the stone (and on screen as a ring)
-            const m = addPart({ part: 'variable', x: s.x - 15 + 60 * i, y: s.y, color: base, name: i ? '' : s.label, nodeId: i ? null : s.sid, info: s });
+            const base = CCOL.socket;
+            const m = addPart({ part: 'variable', x: sockX(s, i), y: s.y, color: base, name: '', info: s });
             m.userData.dataSock = s.sid + '|' + i; m.userData.baseColor = base;
-            // the first socket stands on the road: its name tape goes beside it on the board, like a shelf label
-            if (i === 0) sticker(m, s.dataNames[i], 30, 9, -46, 0, true); else sticker(m, s.dataNames[i], 30, 9, 0, -19, true);
+            sticker(m, s.dataNames[i], 30, 9, 0, -19, true);
           });
           if (s.container) {
-            const x0 = s.x - 15 + 60 * s.dataNames.length;
+            const x0 = sockX(s, s.dataNames.length);
             const cx = ['list', 'tuple', 'stringTray'].includes(s.container) ? x0 + 60 : x0 + 30;
             const part = s.container === 'tuple' ? 'list' : s.container;
             const colors = { list: CCOL.list, tuple: CCOL.tuple, dictionary: CCOL.dict, setBin: CCOL.set, stringTray: CCOL.string, instance: CCOL.object };
@@ -3494,10 +3510,12 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (blind) applyBlind();
       for (const r of plan.routes) addPart({ part: 'route', x: r.x, y: r.y, rotation: r.rot, color: CCOL.route, info: r.exit ? { exitRoad: true } : undefined });
       for (const s of plan.signs) { const g = addPart({ part: 'sign', x: s.x, y: s.y, color: s.color, name: s.label, labelSize: s.small ? 6.5 : 10 }); g.userData.flagRow = s.small ? s.y : null; }
-      const xs = plan.stations.map(s => s.x), ys = plan.stations.map(s => s.y);
+      const xs = plan.stations.map(s => s.kind === 'data' ? sockX(s, s.dataNames.length - 1) + 30 : s.x), ys = plan.stations.map(s => s.y);   // the board also carries the compartments
       ensurePanels(Math.min(...xs, 0) - 40, Math.max(...xs) + 40, Math.min(...ys) - 40, plan.memY + 60);
     }
 
+    // compartment i of an assignment row: beside the station, after the workbench if the line calculates
+    function sockX(st, i) { return st.x + (st.calc ? 195 : 60) + 60 * i; }
     // ---- memory rendering ----
     // Every name sits on the row of the statement that first created it, in the names strip to the right of
     // its lane; the object it refers to (tray, bin, pallet, string tray, rack) follows right after the socket.
@@ -3757,12 +3775,12 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       [...rows.values()].sort((a, b) => b.st.y - a.st.y).forEach(({ st, entries }) => {
         const y = st.y, isData = st.kind === 'data';
         // a socket stop holds its own names in the aisle; other stops keep their names just right of the station
-        let x = isData ? st.x - 15 + 60 * st.dataNames.length : st.x + 135, lastK = 0;
+        let x = isData ? sockX(st, st.dataNames.length) : st.x + 135, lastK = 0;
         entries.sort((a, b) => a.fr.k - b.fr.k);
         for (const e of entries) {
           const di = isData && e.fr.k === 0 ? st.dataNames.indexOf(e.name) : -1;
           let sx, dynSock = null, dataSockFor = null;
-          if (di >= 0) sx = st.x - 15 + 60 * di;
+          if (di >= 0) sx = sockX(st, di);
           else {
             if (e.fr.k !== lastK) { addPart({ part: 'card', x: x + 10, y, z: 6, color: CCOL.paper, name: `call ${e.fr.k + 1}`, labelSize: 4.4 }, true); x += 60; lastK = e.fr.k; }
             sx = x; dynSock = addPart({ part: 'variable', x: sx, y, color: CCOL.socket }, true); x += 60;
@@ -3827,7 +3845,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       const ops = I.ops || [], op = ops[ops.length - 1];
       const ost = op && rowOf.get(op.sid);
       if (op && ost && !ost.bench) {
-        const start = rowEnd.get(ost.sid) || (ost.kind === 'data' ? ost.x - 15 + 60 * ost.dataNames.length : ost.x + 135);
+        const start = ost.kind === 'data' && ost.calc ? ost.x + 30 : rowEnd.get(ost.sid) || (ost.kind === 'data' ? sockX(ost, ost.dataNames.length) : ost.x + 135);
         const bx = Math.ceil((start + 45) / 30) * 30, by = ost.y;
         const bench = addPart({ part: 'operator', x: bx, y: by, color: CCOL.bench, name: '', labelSize: 5 }, true);
         lift(bench, bx, by + 22);
@@ -4774,7 +4792,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (e instanceof PySyntaxError || e.pyType === 'SyntaxError') {
         setBand('#errBand', e.line);
         $('#edMsg').className = 'ed-msg err';
-        $('#edMsg').innerHTML = `<b>Zeile ${e.line}:</b> ${esc(e.message)}. Das Brett zeigt deine letzte funktionierende Version.`;
+        $('#edMsg').hidden = false; $('#edMsg').innerHTML = `<b>Zeile ${e.line}:</b> ${esc(e.message)}.`;
         $('#syntaxBanner').innerHTML = `<b>Zeile ${e.line} ist kein gültiges Python.</b> ${esc(e.message)}. Das Brett kann sie nicht bauen: korrigiere oder entferne die Zeile.`; $('#syntaxBanner').hidden = false;
         status();
         return false;
@@ -4790,6 +4808,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     $('#edMsg').className = 'ed-msg';
     const counts = plan.stations.length - 1, lanes = plan.lanes.length - 1;
     const built = `Brett gebaut: ${counts} ${counts === 1 ? 'Station' : 'Stationen'}${lanes ? `, ${lanes} ${lanes === 1 ? 'Funktions-Bahn' : 'Funktions-Bahnen'}` : ''}${plan.loopCount ? `, ${plan.loopCount} ${plan.loopCount === 1 ? 'Schleife' : 'Schleifen'}` : ''}.`;
+    $('#edMsg').hidden = true;
     $('#edMsg').innerHTML = lessonNote ? `<b>${esc(lessonNote)}</b><div class="lesson">${built} Drück Start.</div>` : esc(built + ' Drück Start.');
     refreshGutter(); drawGuides();
     if (board && opts.fit !== false) board.fit();
@@ -5198,18 +5217,18 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     let ok = null;
     if (x.kind === 'build') ok = showChecks(checkTask(x, ta.value));
     else {
-      if (r.state === 'error') out.push('Die Schicht wurde wegen eines Fehlers abgebrochen. Die Meldung steht am Brett.');
+      if (r.state === 'error') out.push('Abbruch mit Fehler (Meldung am Brett).');
       const g = learn.goal;
       if (g) {
         const lines = I.out.trim().split('\n'), v = g.out ? undefined : I.globals.vars.get(g.name);
         const actual = g.out ? (r.state === 'done' ? lines[lines.length - 1] : '–') : v === undefined ? '–' : I.repr(v);
         if (g.expect !== undefined) { ok = r.state === 'done' && norm(actual) === norm(g.expect); out.unshift(ok ? '<b class="good">Auftrag erfüllt.</b>' : `<b class="bad">Noch nicht:</b> ${g.out ? 'auf dem letzten Etikett steht' : 'im Fach ' + esc(g.name) + ' liegt'} ${esc(actual)}, gesucht ist ${esc(g.expect)}.`); }
-        else out.push(`Ergebnis: ${g.out ? 'auf dem letzten Etikett steht' : 'im Fach <b>' + esc(g.name) + '</b> liegt'} <b>${esc(actual)}</b>.`);
+        else out.push(`<code>${g.out ? 'Etikett: ' + esc(actual) : esc(g.name) + ' = ' + esc(actual)}</code>`);
       }
-      if (r.state === 'done' && !out.length) out.push('Schicht beendet.');
+      if (r.state === 'done' && !out.length) out.push('Fertig.');
       $('#taskResult').innerHTML = out.map(l => `<div>${l}</div>`).join(''); $('#taskResult').hidden = false;
     }
-    if (quiz.asked) $('#taskResult').insertAdjacentHTML('beforeend', `<div>Fragen unterwegs: ${quiz.right} von ${quiz.asked} richtig.</div>`);
+
     $('#nextTask').hidden = !(ok === true || (ok === null && r.state === 'done'));
     renderAll();
   }
@@ -5387,7 +5406,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
       if (opts.animate && grew && st.prevSid && r.state !== 'input') board.printLabel(st.prevSid, r.I.out.slice(st.lastOutLen || 0).trim());
       if (opts.animate) playStepSounds(r, st.prevSid, grew);
       board.setTerminal(r.state === 'input' && r.waiting ? r.waiting.sid : null);
-      $('#termPanel').classList.toggle('asking', r.state === 'input');
+      $('#termPanel').classList.toggle('asking', r.state === 'input'); $('#inForm').hidden = r.state !== 'input';
       if (r.state === 'input') setTimeout(() => $('#inField').focus(), 60);
       if (opts.animate) { warehouseMoments(r, st.prevSid); recordBook(r, st.prevSid); }
       if (st.focus !== false) {
@@ -6123,14 +6142,14 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   function setHints(on) { mode.hints = on; $('#hintBtn').setAttribute('aria-pressed', on); if (board) board.setCloud(on ? cloudText() : null); }
   // ---- Einführung: a short tour through the screen, one part at a time
   const TOUR = [
-    [null, 'Willkommen im Python-Lager!', 'Jede Zeile Python wird hier zu einer Station auf einem Lagerbrett. Ein Gabelstapler fährt dein Programm ab, genau in der Reihenfolge, in der Python es ausführt.'],
-    ['#taskBox', 'Dein Auftrag', 'Hier steht, was dein Programm leisten soll. Mit <b>Prüfen</b> testest du es: das Lager druckt die Etiketten und vergleicht sie mit dem Auftrag.'],
-    ['#puzzleTray', 'Deine Teile', 'Fahr mit der Maus über ein Teil: eine Vorschau zeigt, was es im Lager tut. Zieh es aufs Brett oder in den Code. Rechts neben <code>if</code>, <code>for</code> oder <code>while</code> gelegt, kommt es <b>hinein</b>. Nicht jedes Teil gehört dazu, und gelbe Teile haben eine Lücke <code>__</code>.'],
-    ['#view', 'Das Brett', 'Die Farbe sagt, was ein Teil tut: <b>hellgrün</b> Anweisung und Etikett, <b>blau</b> prüfen, <b>orange</b> wiederholen, <b>rot</b> springen, <b>grau</b> Fächer und Werkstatt. Teile lassen sich verschieben, ein Doppelklick ändert ihre Zeile.'],
-    ['#runBtn', 'Schritt für Schritt', '<b>Start</b> macht genau einen Schritt. Schau, was passiert: Werkbank, Waage, Etikettendrucker. Erst wenn du es verstanden hast, klick wieder (oder drück die Leertaste). Manchmal fragt das Lager dich vorher: True oder False?'],
-    ['#editor', 'Code und Brett', 'Beides gehört zusammen. Zeig auf eine Zeile, und ihr Teil leuchtet. Änderst du den Code, baut sich das Brett um.'],
-    ['#sideTab', 'Konsole und Lagerbuch', 'Hier tippst du Eingaben ein. Das <b>Lagerbuch</b> zeigt, was sich in jedem Schritt geändert hat, wie eine Tracing-Tabelle auf Papier.'],
-    ['#example', 'Aufgaben', 'Hier wählst du Aufgaben, sortiert nach Terminen: <b>Bauen</b> (einen Auftrag erfüllen) und <b>Verstehen</b> (vorhersagen, Fehler finden). Viel Erfolg!'],
+    [null, 'Python-Lager', 'Jede Codezeile wird eine Station. Der Stapler führt das Programm aus.'],
+    ['#taskBox', 'Aufgabe', 'Was das Programm leisten soll. „Prüfen“ testet es.'],
+    ['#puzzleTray', 'Teile', 'Aufs Brett oder in den Code ziehen. Rechts neben if, for oder while: hinein.'],
+    ['#view', 'Brett', 'Teile verschieben, Doppelklick ändert die Zeile.'],
+    ['#runBtn', 'Start', 'Ein Schritt pro Klick oder Leertaste.'],
+    ['#editor', 'Code', 'Code und Brett hängen zusammen.'],
+    ['#sideTab', 'Lagerbuch & Hilfe', 'Änderungen pro Schritt, Bausteine und Hilfe.'],
+    ['#example', 'Aufgaben', 'Nach Terminen sortiert: Bauen und Verstehen.'],
   ];
   let tourAt = -1;
   function showTourStep() {
@@ -6154,7 +6173,10 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
   });
   window.addEventListener('resize', () => { if (tourAt >= 0) showTourStep(); });
   window.addEventListener('keydown', e => { if (tourAt >= 0 && e.key === 'Escape') endTour(); });
-  { let seen = null; try { seen = localStorage.getItem('pyboard-tour'); } catch (e) {} if (!seen) setTimeout(() => { if (tourAt < 0) startTour(); }, 1800); }
+  // offered, not forced: a small card at the start; it goes away with the first action
+  setTimeout(() => { $('#tourOffer').hidden = false; }, 900);
+  $('#tourOffer').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; $('#tourOffer').hidden = true; if (b.dataset.t === 'go') startTour(); });
+  ['#runBtn', '#example', '#modeGuided'].forEach(id => $(id).addEventListener('click', () => { $('#tourOffer').hidden = true; }, { once: true }));
   $('#modeGuided').onclick = () => startTour();
   $('#modeFree').onclick = () => setMode(false);
   $('#hintBtn').onclick = () => setHints(!mode.hints);
@@ -6258,7 +6280,8 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     const sl = SLIDES[(x.group || '').split(':')[0]];
     $('#taskKind').textContent = x.title;
     const q = x.goal && x.goal.q ? `<span class="task-q">${esc(x.goal.q)}</span>` : isWriteTask(x) ? '<span class="task-q">Den Code selbst schreiben. Hilfe: Bausteine (rechts) oder „Als Puzzle bauen“.</span>' : '';
-    $('#taskText').innerHTML = (x.kind === 'build' ? x.brief : esc(x.note || '')) + q + (sl ? `<span class="slides">Theorie: ${sl}</span>` : '');
+    $('#taskText').innerHTML = (x.kind === 'build' ? x.brief : esc(x.note || '')) + q;
+    $('#taskKind').title = sl ? 'Theorie: ' + sl : '';
     $('#taskCheck').hidden = x.kind !== 'build'; box.hidden = false;
   }
   function loadExample(id) {
@@ -6286,7 +6309,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     const r = st.runner; if (!r || r.state !== 'ready' || st.autoplay || (puzzle.on && !puzzle.cards.every(c => c.used))) return false;
     const stn = st.plan && st.plan.stations.find(x => x.sid === (r.event && r.event.sid));
     if (!stn || quiz.asked >= 2 || quiz.pending || r.steps < 1) return false;
-    const kind = stn.kind === 'cond' ? 'cond' : stn.kind === 'print' ? 'print' : stn.kind === 'data' && stn.dataNames && stn.dataNames.length === 1 ? 'data' : null;
+    const kind = stn.kind === 'cond' ? 'cond' : stn.kind === 'print' && !/input\(/.test(stn.full || stn.label || '') ? 'print' : stn.kind === 'data' && stn.calc && !stn.viaInput && stn.dataNames && stn.dataNames.length === 1 ? 'data' : null;
     if (!kind) return false;
     if (Math.random() < (quiz.asked ? .3 : .45)) return false;      // not every time: a question now and then
     quiz.pending = { sid: stn.sid, kind, name: kind === 'data' ? stn.dataNames[0] : null, outLen: r.I.out.length };
@@ -6398,7 +6421,7 @@ if (typeof module !== 'undefined') module.exports = { Runner }; else window.PyRu
     setTimeout(() => { applyWidths(); board && board.fit && null; }, 30);
   }
   $('#sideTab').onclick = () => setSide($('#app').classList.contains('side-closed'));
-  { let pref = null; try { pref = localStorage.getItem('pyboard-side'); } catch (e) {} setSide(pref === 'open', false); }
+  setSide(false, false);
   window.addEventListener('resize', applyWidths);
   new MutationObserver(() => setTimeout(applyWidths, 30)).observe($('#app'), { attributes: true, attributeFilter: ['class'] });
   function start() {
